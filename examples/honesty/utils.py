@@ -93,7 +93,11 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
         'test': {'data': test_data, 'labels': [[1,0]] * len(test_data)}
     }
 
-def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_answer_token=":"):
+def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_answer_token="<｜Assistant｜>"):
+    # Check if start_answer_token is in input_ids
+    if start_answer_token not in input_ids:
+        start_answer_token = input_ids[0]
+        print(f"start_answer_token not found in input_ids. Using {start_answer_token} instead.")
 
     cmap=LinearSegmentedColormap.from_list('rg',["r", (255/255, 255/255, 224/255), "g"], N=256)
     colormap = cmap
@@ -200,10 +204,15 @@ def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_a
         iter += 1
 
 
-def plot_lat_scans(input_ids, rep_reader_scores_dict, layer_slice):
+def plot_lat_scans(input_ids, rep_reader_scores_dict, layer_slice, start_answer_token="<｜Assistant｜>"):
+    # Check if start_answer_token is in input_ids
+    if start_answer_token not in input_ids:
+        start_answer_token = input_ids[0]
+        print(f"start_answer_token not found in input_ids. Using {start_answer_token} instead.")
+        
     for rep, scores in rep_reader_scores_dict.items():
 
-        start_tok = input_ids.index('▁A')
+        start_tok = input_ids.index(start_answer_token)
         print(start_tok, np.array(scores).shape)
         standardized_scores = np.array(scores)[start_tok:start_tok+40,layer_slice]
         # print(standardized_scores.shape)
