@@ -133,7 +133,7 @@ class RepReadingPipeline(Pipeline):
 		# if relevant, get the hidden state data for training set
         hidden_states = None
         relative_hidden_states = None
-        if direction_finder.needs_hiddens:
+        if direction_finder.needs_hiddens: # This is always the case
             # get raw hidden states for the train inputs
             hidden_states = self._batched_string_to_hiddens(train_inputs, rep_token, hidden_layers, batch_size, which_hidden_states, **tokenizer_args)
             

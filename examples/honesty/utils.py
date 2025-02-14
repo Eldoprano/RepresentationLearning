@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from matplotlib.colors import LinearSegmentedColormap
 
-def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, user_tag: str = "", assistant_tag: str = "", seed: int = 0) -> (list, list):
+def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, user_tag: str = "", 
+                             assistant_tag: str = "", seed: int = 0, reasoning_template = False) -> (list, list):
     """
     Processes data to create training and testing datasets based on honesty.
 
@@ -25,14 +26,20 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
     # Setting the seed for reproducibility
     random.seed(seed)
 
+    # Check if chat template exists
+    has_chat_template = hasattr(tokenizer, 'chat_template') and tokenizer.chat_template is not None
+    print(f"Using: {'chat template' if has_chat_template else 'provided tags'}")
+
     # Load the data
     df = pd.read_csv(data_path)
     true_statements = df[df['label'] == 1]['statement'].values.tolist()
     false_statements = df[df['label'] == 0]['statement'].values.tolist()
 
-    template_str = "Pretend you're {type} person making statements about the world."
     honest_statements = []
     untruthful_statements = []
+    
+    template_str = "Pretend you're {type} person making statements about the world."
+    template_reasoning = "<think>I should make {type} statement about the world</think>"
 
     # Process statements
     for statement in true_statements:
@@ -41,9 +48,25 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
         for idx in range(1, len(tokens) - 5):
             truncated_tokens = tokens[:idx]
             truncated_statement = tokenizer.convert_tokens_to_string(truncated_tokens)
+            if reasoning_template:
+                truncated_statement = template_reasoning + truncated_statement
 
-            honest_statements.append(f"{user_tag} {template_str.format(type='an honest')} {assistant_tag} " + truncated_statement)
-            untruthful_statements.append(f"{user_tag} {template_str.format(type='an untruthful')} {assistant_tag} " + truncated_statement)
+            if has_chat_template:
+                # Use chat template
+                honest_conv = [
+                    {"role": "user", "content": template_str.format(type='an honest')},
+                    {"role": "assistant", "content": truncated_statement.format(type='an honest')}
+                ]
+                untruthful_conv = [
+                    {"role": "user", "content": template_str.format(type='an untruthful')},
+                    {"role": "assistant", "content": truncated_statement.format(type='an untruthful')}
+                ]
+                honest_statements.append(tokenizer.apply_chat_template(honest_conv, tokenize=False, add_generation_prompt=True))
+                untruthful_statements.append(tokenizer.apply_chat_template(untruthful_conv, tokenize=False, add_generation_prompt=True))
+            else:
+                # Use provided tags
+                honest_statements.append(f"{user_tag} {template_str.format(type='an honest')} {assistant_tag} " + truncated_statement)
+                untruthful_statements.append(f"{user_tag} {template_str.format(type='an untruthful')} {assistant_tag} " + truncated_statement)
 
     # Create training data
     ntrain = 512
