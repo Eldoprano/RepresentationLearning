@@ -61,8 +61,15 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
                     {"role": "user", "content": template_str.format(type='an untruthful')},
                     {"role": "assistant", "content": truncated_statement.format(type='an untruthful')}
                 ]
-                honest_statements.append(tokenizer.apply_chat_template(honest_conv, tokenize=False, add_generation_prompt=True))
-                untruthful_statements.append(tokenizer.apply_chat_template(untruthful_conv, tokenize=False, add_generation_prompt=True))
+                # Ugly hack, because continue_final_message=True has some bugs
+                # Apply the template and remove "<｜end▁of▁sentence｜>" from the result
+                honest_template = tokenizer.apply_chat_template(honest_conv, tokenize=False, add_generation_prompt=False)
+                honest_template = honest_template.replace("<｜end▁of▁sentence｜>", "")
+                honest_statements.append(honest_template)
+
+                untruthful_template = tokenizer.apply_chat_template(untruthful_conv, tokenize=False, add_generation_prompt=False)
+                untruthful_template = untruthful_template.replace("<｜end▁of▁sentence｜>", "")
+                untruthful_statements.append(untruthful_template)
             else:
                 # Use provided tags
                 honest_statements.append(f"{user_tag} {template_str.format(type='an honest')} {assistant_tag} " + truncated_statement)
@@ -94,114 +101,164 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
     }
 
 def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_answer_token="<｜Assistant｜>"):
-    # Check if start_answer_token is in input_ids
-    if start_answer_token not in input_ids:
-        start_answer_token = input_ids[0]
-        print(f"start_answer_token not found in input_ids. Using {start_answer_token} instead.")
-
-    cmap=LinearSegmentedColormap.from_list('rg',["r", (255/255, 255/255, 224/255), "g"], N=256)
-    colormap = cmap
-
-    # Define words and their colors
-    words = [token.replace('▁', ' ') for token in input_ids]
-
-    # Create a new figure
-    fig, ax = plt.subplots(figsize=(12.8, 10), dpi=200)
-
-    # Set limits for the x and y axes
+    # Parameters that affect layout
+    x_start = 1
+    y_start = 8
+    y_pad = 0.3
+    line_spacing = 1.2
     xlim = 1000
-    ax.set_xlim(0, xlim)
-    ax.set_ylim(0, 10)
+    fig_width = 12.8
 
-    # Remove ticks and labels from the axes
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-
-    # Starting position of the words in the plot
-    x_start, y_start = 1, 8
-    y_pad = 0.3
-    # Initialize positions and maximum line width
-    x, y = x_start, y_start
-    max_line_width = xlim
-
-    y_pad = 0.3
-    word_width = 0
-
-    iter = 0
-
-    selected_concepts = ["honesty"]
-    norm_style = ["mean"]
-    selection_style = ["neg"]
-
-    for rep, s_style, n_style in zip(selected_concepts, selection_style, norm_style):
-
-        rep_scores = np.array(rep_reader_scores_dict[rep])
-        mean, std = np.median(rep_scores), rep_scores.std()
-        rep_scores[(rep_scores > mean+5*std) | (rep_scores < mean-5*std)] = mean # get rid of outliers
-        mag = max(0.3, np.abs(rep_scores).std() / 10)
-        min_val, max_val = -mag, mag
-        norm = Normalize(vmin=min_val, vmax=max_val)
-
-        if "mean" in n_style:
-            rep_scores = rep_scores - THRESHOLD # change this for threshold
-            rep_scores = rep_scores / np.std(rep_scores[5:])
-            rep_scores = np.clip(rep_scores, -mag, mag)
-        if "flip" in n_style:
-            rep_scores = -rep_scores
-        
-        rep_scores[np.abs(rep_scores) < 0.0] = 0
-
-        # ofs = 0
-        # rep_scores = np.array([rep_scores[max(0, i-ofs):min(len(rep_scores), i+ofs)].mean() for i in range(len(rep_scores))]) # add smoothing
-        
-        if s_style == "neg":
-            rep_scores = np.clip(rep_scores, -np.inf, 0)
-            rep_scores[rep_scores == 0] = mag
-        elif s_style == "pos":
-            rep_scores = np.clip(rep_scores, 0, np.inf)
-
-
-        # Initialize positions and maximum line width
+    # First pass to calculate height
+    def calculate_layout():
         x, y = x_start, y_start
-        max_line_width = xlim
+        lowest_y = y_start
+        
         started = False
-            
-        for word, score in zip(words[5:], rep_scores[5:]):
-
+        for word in words[5:]:
             if start_answer_token in word:
                 started = True
                 continue
             if not started:
                 continue
             
-            color = colormap(norm(score))
-
-            # Check if the current word would exceed the maximum line width
-            if x + word_width > max_line_width:
-                # Move to next line
+            if '\n' in word:
                 x = x_start
-                y -= 3
-
-            # Compute the width of the current word
-            text = ax.text(x, y, word, fontsize=13)
-            word_width = text.get_window_extent(fig.canvas.get_renderer()).transformed(ax.transData.inverted()).width
-            word_height = text.get_window_extent(fig.canvas.get_renderer()).transformed(ax.transData.inverted()).height
-
-            # Remove the previous text
-            if iter:
-                text.remove()
-
-            # Add the text with background color
-            text = ax.text(x, y + y_pad * (iter + 1), word, color='white', alpha=0,
-                        bbox=dict(facecolor=color, edgecolor=color, alpha=0.8, boxstyle=f'round,pad=0', linewidth=0),
-                        fontsize=13)
+                y -= line_spacing
+                lowest_y = min(lowest_y, y)
+                word = word.replace('\n', '')
+                if not word:
+                    continue
             
-            # Update the x position for the next word
-            x += word_width + 0.1
+            # Temporarily create text to measure width
+            temp_fig, temp_ax = plt.subplots()
+            temp_text = temp_ax.text(0, 0, word, fontsize=13)
+            word_width = temp_text.get_window_extent(
+                temp_fig.canvas.get_renderer()
+            ).transformed(temp_ax.transData.inverted()).width
+            plt.close(temp_fig)
+            
+            if x + word_width > xlim:
+                x = x_start
+                y -= line_spacing
+                lowest_y = min(lowest_y, y)
+            
+            x += word_width
+        
+        return lowest_y
+
+    # Process tokens
+    words = []
+    for token in input_ids:
+        cleaned = token.replace('▁', ' ').replace('Ġ', ' ').replace('Ċ', '\n')
+        words.append(cleaned)
+
+    # Calculate required height
+    lowest_y = calculate_layout()
+    total_height = y_start - lowest_y + 2  # Add padding
+    aspect_ratio = total_height / xlim
+    fig_height = fig_width * aspect_ratio
+
+    # Create figure with calculated dimensions
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=200)
+    ax.set_xlim(0, xlim)
+    ax.set_ylim(lowest_y - 1, y_start + 1)
+    
+    # Remove ticks and labels
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+
+    # Create colormap
+    cmap = LinearSegmentedColormap.from_list('rg', ["r", (255/255, 255/255, 224/255), "g"], N=256)
+    colormap = cmap
+
+    # Process scores and create visualization
+    selected_concepts = ["honesty"]
+    norm_style = ["mean"]
+    selection_style = ["neg"]
+    
+    iter = 0
+    for rep, s_style, n_style in zip(selected_concepts, selection_style, norm_style):
+        rep_scores = np.array(rep_reader_scores_dict[rep])
+        
+        # Statistical normalization
+        mean, std = np.median(rep_scores), rep_scores.std()
+        rep_scores[(rep_scores > mean+5*std) | (rep_scores < mean-5*std)] = mean
+        
+        mag = max(0.3, np.abs(rep_scores).std() / 10)
+        min_val, max_val = -mag, mag
+        norm = Normalize(vmin=min_val, vmax=max_val)
+        
+        if "mean" in n_style:
+            rep_scores = rep_scores - THRESHOLD
+            rep_scores = rep_scores / np.std(rep_scores[5:])
+            rep_scores = np.clip(rep_scores, -mag, mag)
+        if "flip" in n_style:
+            rep_scores = -rep_scores
+        
+        rep_scores[np.abs(rep_scores) < 0.0] = 0
+        
+        if s_style == "neg":
+            rep_scores = np.clip(rep_scores, -np.inf, 0)
+            rep_scores[rep_scores == 0] = mag
+        elif s_style == "pos":
+            rep_scores = np.clip(rep_scores, 0, np.inf)
+        
+        # Reset position for rendering
+        x, y = x_start, y_start
+        started = False
+        
+        for word, score in zip(words[5:], rep_scores[5:]):
+            if start_answer_token in word:
+                started = True
+                continue
+            if not started:
+                continue
+            
+            if '\n' in word:
+                x = x_start
+                y -= line_spacing
+                word = word.replace('\n', '')
+                if not word:
+                    continue
+            
+            color = colormap(norm(score))
+            
+            # Check if word exceeds line width
+            temp_text = ax.text(0, 0, word, fontsize=13)
+            word_width = temp_text.get_window_extent(
+                fig.canvas.get_renderer()
+            ).transformed(ax.transData.inverted()).width
+            temp_text.remove()
+            
+            if x + word_width > xlim:
+                x = x_start
+                y -= line_spacing
+            
+            # Render base text
+            text_base = ax.text(x, y + y_pad * (iter + 1), word, 
+                              color='black',
+                              fontsize=13)
+            
+            # Render colored overlay
+            text_color = ax.text(x, y + y_pad * (iter + 1), word, 
+                               color='white',
+                               alpha=0,
+                               bbox=dict(facecolor=color, 
+                                       edgecolor=color, 
+                                       alpha=0.8,
+                                       boxstyle='round,pad=0', 
+                                       linewidth=0),
+                               fontsize=13)
+            
+            x += word_width
         
         iter += 1
+    
+    plt.subplots_adjust(top=0.95)
+    return fig, ax
 
 
 def plot_lat_scans(input_ids, rep_reader_scores_dict, layer_slice, start_answer_token="<｜Assistant｜>"):
