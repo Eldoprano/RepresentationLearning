@@ -39,7 +39,7 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
     untruthful_statements = []
     
     template_str = "Pretend you're {type} person making statements about the world."
-    template_reasoning = "<think>I should make {type} statement about the world</think>"
+    template_reasoning = "<think>I can do this</think>"
 
     # Process statements
     for statement in true_statements:
@@ -55,25 +55,33 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
                 # Use chat template
                 honest_conv = [
                     {"role": "user", "content": template_str.format(type='an honest')},
-                    {"role": "assistant", "content": truncated_statement.format(type='an honest')}
+                    {"role": "assistant", "content": ""}
                 ]
                 untruthful_conv = [
                     {"role": "user", "content": template_str.format(type='an untruthful')},
-                    {"role": "assistant", "content": truncated_statement.format(type='an untruthful')}
+                    {"role": "assistant", "content": ""}
                 ]
                 # Ugly hack, because continue_final_message=True has some bugs
                 # Apply the template and remove "<｜end▁of▁sentence｜>" from the result
-                honest_template = tokenizer.apply_chat_template(honest_conv, tokenize=False, add_generation_prompt=False)
+                honest_template = tokenizer.apply_chat_template(honest_conv, tokenize=False, add_generation_prompt=False, continue_final_message=True)
                 honest_template = honest_template.replace("<｜end▁of▁sentence｜>", "")
+                if reasoning_template:
+                    honest_template += truncated_statement.format(type='an honest')
                 honest_statements.append(honest_template)
 
-                untruthful_template = tokenizer.apply_chat_template(untruthful_conv, tokenize=False, add_generation_prompt=False)
+                untruthful_template = tokenizer.apply_chat_template(untruthful_conv, tokenize=False, add_generation_prompt=False, continue_final_message=True)
                 untruthful_template = untruthful_template.replace("<｜end▁of▁sentence｜>", "")
+                if reasoning_template:
+                    untruthful_template += truncated_statement.format(type='an untruthful')
                 untruthful_statements.append(untruthful_template)
             else:
                 # Use provided tags
                 honest_statements.append(f"{user_tag} {template_str.format(type='an honest')} {assistant_tag} " + truncated_statement)
                 untruthful_statements.append(f"{user_tag} {template_str.format(type='an untruthful')} {assistant_tag} " + truncated_statement)
+
+    print(f"Honest statement:\n{honest_statements[0]}")
+    print()
+    print(f"Untruthful statement:\n{untruthful_statements[0]}")
 
     # Create training data
     ntrain = 512
@@ -262,7 +270,7 @@ def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_a
     return fig, ax
 
 
-def plot_lat_scans(input_ids, rep_reader_scores_dict, layer_slice, start_answer_token="<｜Assistant｜>"):
+def plot_lat_scans(input_ids, rep_reader_scores_dict, layer_slice, start_answer_token="<｜Assistant｜>", num_tokens_to_plot = 40):
     # Check if start_answer_token is in input_ids
     if start_answer_token not in input_ids:
         start_answer_token = input_ids[0]
@@ -272,7 +280,7 @@ def plot_lat_scans(input_ids, rep_reader_scores_dict, layer_slice, start_answer_
 
         start_tok = input_ids.index(start_answer_token)
         print(start_tok, np.array(scores).shape)
-        standardized_scores = np.array(scores)[start_tok:start_tok+40,layer_slice]
+        standardized_scores = np.array(scores)[start_tok:start_tok+num_tokens_to_plot,layer_slice]
         # print(standardized_scores.shape)
 
         bound = np.mean(standardized_scores) + np.std(standardized_scores)
