@@ -103,10 +103,10 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
 def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_answer_token="<｜Assistant｜>"):
     # Parameters that affect layout
     x_start = 1
-    y_start = 8
-    y_pad = 0.3
-    line_spacing = 1.2
-    xlim = 1000
+    y_start = 9.5
+    y_pad = 0.2
+    line_spacing = 0.9
+    xlim = 20
     fig_width = 12.8
 
     # First pass to calculate height
@@ -155,9 +155,10 @@ def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_a
 
     # Calculate required height
     lowest_y = calculate_layout()
-    total_height = y_start - lowest_y + 2  # Add padding
-    aspect_ratio = total_height / xlim
-    fig_height = fig_width * aspect_ratio
+    content_height = y_start - lowest_y + 2  # The actual height of our content (plus padding)
+    points_per_data_unit = fig_width * 72 / xlim  # How many points (1/72 inch) per data unit in width
+    needed_height_points = content_height * points_per_data_unit  # Convert content height to points
+    fig_height = needed_height_points / 72  # Convert points to inches
 
     # Create figure with calculated dimensions
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=200)
@@ -238,7 +239,7 @@ def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_a
                 y -= line_spacing
             
             # Render base text
-            text_base = ax.text(x, y + y_pad * (iter + 1), word, 
+            text_base = ax.text(x, y - 0.35 + y_pad * (iter + 1), word, 
                               color='black',
                               fontsize=13)
             
