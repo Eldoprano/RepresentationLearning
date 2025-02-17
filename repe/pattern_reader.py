@@ -1,10 +1,13 @@
 import torch
 import re
+import numpy as np
 from typing import List, Tuple, Optional, Dict, Union, Literal
 from tqdm import tqdm
 from .rep_readers import RepReader
 
 class PatternRepReader(RepReader):
+    """Pattern-based representation reader that finds relevant tokens using regex patterns"""
+    
     def __init__(self, 
                  target_pattern: str,
                  pattern_token_selection: Literal["first", "last", "all"] = "last",
@@ -13,6 +16,71 @@ class PatternRepReader(RepReader):
         self.target_pattern = target_pattern
         self.pattern_token_selection = pattern_token_selection
         self.before_sentences, self.after_sentences = sentence_context
+        self.directions = {}
+        self.direction_signs = {}
+
+    def _find_matches(self, text):
+        """Find positive and negative pattern matches in text"""
+        # Get text between start and end patterns
+        pos_pattern = f"{self.start_pattern}.*?{self.end_pattern}"
+        pos_matches = re.finditer(pos_pattern, text, re.DOTALL)
+        pos_spans = [m.span() for m in pos_matches]
+        
+        neg_spans = []
+        if self.negative_pattern:
+            neg_matches = re.finditer(self.negative_pattern, text, re.DOTALL)
+            neg_spans = [m.span() for m in neg_matches]
+            
+        return pos_spans, neg_spans
+
+    def get_rep_directions(self, texts, reps, layers):
+        """Get directions distinguishing between positive and negative pattern matches"""
+        all_pos_reps = []
+        all_neg_reps = []
+        
+        # Collect positive and negative examples for each text
+        for text, text_reps in zip(texts, reps):
+            pos_spans, neg_spans = self._find_matches(text)
+            
+            if not pos_spans and not neg_spans:
+                continue
+                
+            # Get representations for matched spans
+            for s, e in pos_spans:
+                all_pos_reps.append([r[self.rep_token] for r in text_reps])
+                
+            for s, e in neg_spans:
+                all_neg_reps.append([r[self.rep_token] for r in text_reps])
+                
+        # Skip if not enough examples
+        if len(all_pos_reps) < 1 or (self.negative_pattern and len(all_neg_reps) < 1):
+            return None
+            
+        # Calculate directions
+        directions = {}
+        signs = {}
+        
+        for layer in layers:
+            pos_vecs = [rep[layer] for rep in all_pos_reps]
+            
+            if len(all_neg_reps) > 0:
+                neg_vecs = [rep[layer] for rep in all_neg_reps]
+                direction = np.mean(pos_vecs, axis=0) - np.mean(neg_vecs, axis=0)
+            else:
+                direction = np.mean(pos_vecs, axis=0)
+                
+            # Normalize
+            norm = np.linalg.norm(direction)
+            if norm > 0:
+                direction = direction / norm
+                
+            directions[layer] = direction
+            signs[layer] = 1.0  # Direction from negative to positive
+            
+        self.directions = directions
+        self.direction_signs = signs
+        
+        return directions
 
     def get_directions(self, 
                       texts: List[str],
