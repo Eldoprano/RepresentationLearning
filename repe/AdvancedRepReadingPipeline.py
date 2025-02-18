@@ -104,7 +104,7 @@ class AdvancedRepReadingPipeline(RepReadingPipeline):
                     for pos_index, pos in enumerate(token_positions): # Loop through positions
                         if pos != -1:
                             start_pos = max(0, pos + start_offset)
-                            end_pos = min(layer_hidden_states.shape[1], pos + len(tokenizer.encode(search_tokens_list[pos_index] if search_tokens_list else "", add_special_tokens=False)) + end_offset)
+                            end_pos = min(layer_hidden_states.shape[1], pos + len(self.tokenizer.encode(search_tokens_list[pos_index] if search_tokens_list else "", add_special_tokens=False)) + end_offset)
                             selected_hiddens = layer_hidden_states[batch_idx, start_pos:end_pos, :]
                             if selected_hiddens.numel() > 0:
                                 merged_hiddens.append(selected_hiddens.mean(dim=0)) # Average if multiple tokens selected
