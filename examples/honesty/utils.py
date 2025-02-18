@@ -108,6 +108,34 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
         'test': {'data': test_data, 'labels': [[1,0]] * len(test_data)}
     }
 
+def convert_dataset_format(dataset) -> dict:
+    """
+    Converts a dataset with single integer labels to the format used by honesty_function_dataset.
+    
+    Args:
+        dataset (DatasetDict): Input dataset with 'data' and 'labels' features
+        
+    Returns:
+        dict: Dataset in honesty_function_dataset format with structure:
+            {
+                'train': {'data': list, 'labels': list of [bool, bool]},
+                'test': {'data': list, 'labels': list of [bool, bool]}
+            }
+    """
+    result = {}
+    
+    for split in ['train', 'test']:
+        data = dataset[split]['data']
+        # Convert single labels to pairs [True, False] or [False, True]
+        labels = [[label == 1, label == 0] for label in dataset[split]['labels']]
+        
+        result[split] = {
+            'data': data,
+            'labels': labels
+        }
+    
+    return result
+
 def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_answer_token="<｜Assistant｜>"):
     # Parameters that affect layout
     x_start = 1

@@ -50,7 +50,19 @@ class StringSearchRepReader:
                 continue
                 
             if searched_tokens == "<CUT!>":
-                cut_pos = max(1, int(len(tokens) * 0.3))  # Ensure at least 1 token
+                # Find first non-padding token
+                non_pad_tokens = tokens[tokens != self.pipeline.tokenizer.pad_token_id]
+                if len(non_pad_tokens) == 0:
+                    cut_inputs.append(self.pipeline.tokenizer.decode(tokens))
+                    continue
+                    
+                # Calculate cut position relative to non-padded length
+                non_pad_cut_pos = max(1, int(len(non_pad_tokens) * 0.3))
+                
+                # Find the actual position in the original tokens
+                pad_count = (tokens == self.pipeline.tokenizer.pad_token_id).sum().item()
+                cut_pos = pad_count + non_pad_cut_pos
+                
                 cut_tokens = tokens[:cut_pos]
                 cut_text = self.pipeline.tokenizer.decode(cut_tokens)
                 cut_inputs.append(cut_text)
