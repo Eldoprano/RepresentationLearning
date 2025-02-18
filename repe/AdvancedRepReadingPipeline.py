@@ -15,17 +15,21 @@ class StringSearchRepReader:
         """Helper method to process string search and cut inputs based on labels"""
         if searched_tokens_true is None and searched_tokens_false is None:
             return inputs
-
+    
         # Process both search strings
         searched_tokens_dict = {}
         for label, tokens in [(True, searched_tokens_true), (False, searched_tokens_false)]:
             if tokens is not None:
-                tokenized = self.pipeline.tokenizer(tokens, return_tensors="pt")["input_ids"]
-                searched_tokens_dict[label] = tokenized[:, 1:]  # Remove BOS token
-                print(f"Searched tokens for label {label}:")
-                for t in searched_tokens_dict[label][0]:
-                    print(f"Token {t} -> {self.pipeline.tokenizer.decode(t)}")
-
+                if tokens == "":
+                    # For empty string, mark to cut
+                    searched_tokens_dict[label] = "<CUT!>"
+                else:
+                    tokenized = self.pipeline.tokenizer(tokens, return_tensors="pt")["input_ids"]
+                    searched_tokens_dict[label] = tokenized[:, 1:]  # Remove BOS token
+                    print(f"Searched tokens for label {label}:")
+                    for t in searched_tokens_dict[label][0]:
+                        print(f"Token {t} -> {self.pipeline.tokenizer.decode(t)}")
+    
         # Tokenize inputs
         train_inputs_tokens = self.pipeline.tokenizer(inputs, return_tensors="pt", padding=True)
         input_ids = train_inputs_tokens["input_ids"]
@@ -45,7 +49,16 @@ class StringSearchRepReader:
             if searched_tokens is None:
                 cut_inputs.append(self.pipeline.tokenizer.decode(tokens))
                 continue
-
+                
+            if searched_tokens == "<CUT!>":
+                # Cut at 30% of sequence length for empty search string
+                cut_pos = max(1, int(len(tokens) * 0.3))  # Ensure at least 1 token
+                cut_tokens = tokens[:cut_pos]
+                cut_text = self.pipeline.tokenizer.decode(cut_tokens)
+                cut_inputs.append(cut_text)
+                continue
+    
+            # Normal string search logic
             found = False
             for i in range(len(tokens) - len(searched_tokens[0]) + 1):
                 if torch.all(tokens[i:i+len(searched_tokens[0])] == searched_tokens[0]):
@@ -56,7 +69,7 @@ class StringSearchRepReader:
                     break
             if not found:
                 cut_inputs.append(self.pipeline.tokenizer.decode(tokens))
-
+    
         # Remove artifacts from decoded strings
         return [text.replace(self.pipeline.tokenizer.pad_token, "").replace(self.pipeline.tokenizer.bos_token,"") for text in cut_inputs]
 
