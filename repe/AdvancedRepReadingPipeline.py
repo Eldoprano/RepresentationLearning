@@ -66,33 +66,54 @@ class AdvancedRepReadingPipeline(RepReadingPipeline):
 
             for layer in hidden_layers:
                 layer_hidden_states = outputs['hidden_states'][layer]
-                # search for token position
-                if isinstance(search_tokens, str):
-                    search_tokens = self.tokenizer.tokenize(search_tokens)
-
                 token_positions = []
-                for tokens_to_search in search_tokens:
-                    found_token_ids = self.tokenizer.convert_tokens_to_ids(tokens_to_search)
-                    for batch_idx in range(model_inputs['input_ids'].shape[0]):
-                        input_ids_batch = model_inputs['input_ids'][batch_idx]
-                        positions = (input_ids_batch == found_token_ids[0]).nonzero(as_tuple=True)[0]
-                        if len(positions) > 0: # Found at least one instance
-                             token_positions.append(positions[0].item()) # take the first instance
-                             break # Break after finding the first instance in the batch
-                        else:
-                            token_positions.append(-1) # Not found, default to -1
+
+                if isinstance(search_tokens, str) or isinstance(search_tokens, list):
+                    if isinstance(search_tokens, str):
+                        search_tokens_list = [search_tokens] # Handle single string input
+                    else:
+                        search_tokens_list = search_tokens
+
+                    for tokens_to_search in search_tokens_list:
+                        found_token_ids = self.tokenizer.encode(tokens_to_search, add_special_tokens=False)
+                        for batch_idx in range(layer_hidden_states.shape[0]):
+                            input_ids_batch = model_inputs['input_ids'][batch_idx]
+                            start_positions = (input_ids_batch == found_token_ids[0]).nonzero(as_tuple=True)[0]
+
+                            current_positions = []
+                            for start_pos in start_positions:
+                                match = True
+                                for offset, token_id in enumerate(found_token_ids[1:]):
+                                    if start_pos + offset + 1 >= input_ids_batch.shape[0] or input_ids_batch[start_pos + offset + 1] != token_id:
+                                        match = False
+                                        break
+                                if match:
+                                    current_positions.append(start_pos.item())
+
+                            if len(current_positions) > 0:
+                                token_positions.extend(current_positions) # Add all instances found in the batch
+                else: # Fallback to original rep_token logic if search_tokens is None or not a valid type
+                    rep_token = forward_params.get('rep_token', -1) # Get rep_token if available, else default to -1
+                    token_positions = [rep_token] * layer_hidden_states.shape[0]
+
 
                 selected_hidden_states_list = []
                 for batch_idx in range(layer_hidden_states.shape[0]):
                     start_offset, end_offset = sentence_selection
-                    pos = token_positions[batch_idx]
-                    start_pos = max(0, pos + start_offset)
-                    end_pos = min(layer_hidden_states.shape[1], pos + end_offset + 1) # +1 because slice is exclusive of end
+                    merged_hiddens = []
+                    for pos_index, pos in enumerate(token_positions): # Loop through positions
+                        if pos != -1:
+                            start_pos = max(0, pos + start_offset)
+                            end_pos = min(layer_hidden_states.shape[1], pos + len(tokenizer.encode(search_tokens_list[pos_index] if search_tokens_list else "", add_special_tokens=False)) + end_offset)
+                            selected_hiddens = layer_hidden_states[batch_idx, start_pos:end_pos, :]
+                            if selected_hiddens.numel() > 0:
+                                merged_hiddens.append(selected_hiddens.mean(dim=0)) # Average if multiple tokens selected
+                    if merged_hiddens:
+                        selected_hidden_states_list.append(torch.stack(merged_hiddens).mean(dim=0)) # Average over all found instances
+                    else: # Handle cases where search_tokens are not found in the batch
+                        selected_hidden_states_list.append(torch.zeros(layer_hidden_states.shape[-1]).to(layer_hidden_states.device)) # Use zero vector if no tokens found
 
-                    selected_hiddens = layer_hidden_states[batch_idx, start_pos:end_pos, :]
-                    selected_hidden_states_list.append(selected_hiddens)
-
-                selected_hidden_states = torch.cat(selected_hidden_states_list, dim=0)
+                selected_hidden_states = torch.stack(selected_hidden_states_list)
 
                 if selected_hidden_states.dtype == torch.bfloat16:
                     selected_hidden_states = selected_hidden_states.float()
