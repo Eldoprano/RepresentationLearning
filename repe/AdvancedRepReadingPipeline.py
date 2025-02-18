@@ -93,7 +93,7 @@ class AdvancedRepReadingPipeline(RepReadingPipeline):
                             if len(current_positions) > 0:
                                 token_positions.extend(current_positions) # Add all instances found in the batch
                 else: # Fallback to original rep_token logic if search_tokens is None or not a valid type
-                    rep_token = forward_params.get('rep_token', -1) # Get rep_token if available, else default to -1
+                    rep_token = -1 # else default to -1
                     token_positions = [rep_token] * layer_hidden_states.shape[0]
 
 
@@ -101,17 +101,22 @@ class AdvancedRepReadingPipeline(RepReadingPipeline):
                 for batch_idx in range(layer_hidden_states.shape[0]):
                     start_offset, end_offset = sentence_selection
                     merged_hiddens = []
+                    found_search_tokens = False # Flag to track if search tokens were found
                     for pos_index, pos in enumerate(token_positions): # Loop through positions
                         if pos != -1:
+                            found_search_tokens = True # Set flag to True because tokens were found
                             start_pos = max(0, pos + start_offset)
-                            end_pos = min(layer_hidden_states.shape[1], pos + len(self.tokenizer.encode(search_tokens_list[pos_index] if search_tokens_list else "", add_special_tokens=False)) + end_offset)
+                            # Corrected line: use tokens_to_search instead of search_tokens_list[pos_index] which can cause IndexError
+                            end_pos = min(layer_hidden_states.shape[1], pos + len(self.tokenizer.encode(tokens_to_search, add_special_tokens=False)) + end_offset) 
                             selected_hiddens = layer_hidden_states[batch_idx, start_pos:end_pos, :]
                             if selected_hiddens.numel() > 0:
                                 merged_hiddens.append(selected_hiddens.mean(dim=0)) # Average if multiple tokens selected
                     if merged_hiddens:
                         selected_hidden_states_list.append(torch.stack(merged_hiddens).mean(dim=0)) # Average over all found instances
                     else: # Handle cases where search_tokens are not found in the batch
-                        selected_hidden_states_list.append(torch.zeros(layer_hidden_states.shape[-1]).to(layer_hidden_states.device)) # Use zero vector if no tokens found
+                        print(f"Search tokens: {search_tokens_list} not found in input, using last token instead.") # Print warning
+                        selected_hidden_states_list.append(layer_hidden_states[batch_idx, -1, :]) # Fallback to last token
+
 
                 selected_hidden_states = torch.stack(selected_hidden_states_list)
 
@@ -119,10 +124,7 @@ class AdvancedRepReadingPipeline(RepReadingPipeline):
                     selected_hidden_states = selected_hidden_states.float()
                 all_hidden_states[layer] = selected_hidden_states.detach()
 
-        if rep_reader is None:
-            return all_hidden_states
-
-        return rep_reader.transform(all_hidden_states, hidden_layers, component_index)
+        return all_hidden_states
 
 
     def get_directions(self, train_inputs: Union[str, List[str], List[List[str]]], hidden_layers: Union[str, int] = -1, n_difference: int = 1, batch_size: int = 8, train_labels: List[int] = None, direction_method: str = 'pca', direction_finder_kwargs: dict = {}, search_tokens: Union[str, List[str]] = None, sentence_selection: Tuple[int, int] = (0, 0), which_hidden_states: Optional[str] = None, **tokenizer_args):
@@ -164,7 +166,7 @@ class AdvancedRepReadingPipeline(RepReadingPipeline):
     def _batched_string_to_hiddens(self, train_inputs, hidden_layers, batch_size, which_hidden_states, search_tokens, sentence_selection, **tokenizer_args):
         # Wrapper method to get a dictionary hidden states from a list of strings
         hidden_states_outputs = self(train_inputs, hidden_layers=hidden_layers, batch_size=batch_size, rep_reader=None, which_hidden_states=which_hidden_states, search_tokens=search_tokens, sentence_selection=sentence_selection, **tokenizer_args)
-        hidden_states = {layer: [] for layer in hidden_layers}
+        hidden_states = {layer: [] for layer in hidden_states_batch}
         for hidden_states_batch in hidden_states_outputs:
             for layer in hidden_states_batch:
                 hidden_states[layer].extend(hidden_states_batch[layer])
