@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from .rep_readers import DIRECTION_FINDERS, RepReader
 from tqdm.notebook import tqdm  # Use tqdm notebook for better progress bars in Jupyter
+from .rep_reading_pipeline import RepReadingPipeline
 
 class AdvancedRepReaderWrapper:
     """
@@ -48,7 +49,7 @@ class AdvancedRepReaderWrapper:
                             rep_token = -1, # Use dummy rep_token, actual token selection happens in _forward
                             which_hidden_states=which_hidden_states,
                             **tokenizer_args,
-                            component_index=component_index, # Pass component_index
+                            component_index=0, # Pass component_index
                             search_tokens = tokens_to_search, # Pass current search token
                             sentence_selection = sentence_selection # Pass sentence_selection
                         )
@@ -60,9 +61,7 @@ class AdvancedRepReaderWrapper:
                         all_layer_directions[layer] = merged_directions
                     else: # Handle cases where no tokens are found, use random direction as fallback
                         print(f"Warning: Search tokens '{search_tokens_list}' not found in training inputs for layer {layer}. Using random direction.")
-                        random_rep_reader = RandomRepReader() # Use RandomRepReader to get random directions
-                        random_directions = random_rep_reader.get_rep_directions(self.pipeline.model, self.pipeline.tokenizer, None, [layer])
-                        all_layer_directions[layer] = random_directions[layer][0] # Get the random direction, [0] to unpack list
+                        continue
 
         direction_finder.directions = all_layer_directions
         direction_finder.n_components = direction_finder.directions[hidden_layers[0]].shape[0] if direction_finder.directions else 0 # Update n_components
