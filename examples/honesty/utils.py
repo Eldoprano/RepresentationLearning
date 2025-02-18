@@ -111,6 +111,7 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
 def convert_dataset_format(dataset) -> dict:
     """
     Converts a dataset with single integer labels to the format used by honesty_function_dataset.
+    The converted format has data points in pairs, where each pair corresponds to one label array.
     
     Args:
         dataset (DatasetDict): Input dataset with 'data' and 'labels' features
@@ -118,20 +119,41 @@ def convert_dataset_format(dataset) -> dict:
     Returns:
         dict: Dataset in honesty_function_dataset format with structure:
             {
-                'train': {'data': list, 'labels': list of [bool, bool]},
-                'test': {'data': list, 'labels': list of [bool, bool]}
+                'train': {
+                    'data': [str1, str2, str3, str4, ...],  # twice as many as labels
+                    'labels': [[True, False], [True, False], ...]  # one per pair of data points
+                },
+                'test': {
+                    'data': [str1, str2, str3, str4, ...],
+                    'labels': [[True, False], [True, False], ...]
+                }
             }
     """
     result = {}
     
     for split in ['train', 'test']:
+        # Get the data and labels
         data = dataset[split]['data']
-        # Convert single labels to pairs [True, False] or [False, True]
-        labels = [[label == 1, label == 0] for label in dataset[split]['labels']]
+        labels = dataset[split]['labels']
+        
+        # Process pairs of examples
+        paired_data = []
+        paired_labels = []
+        
+        # Process pairs, skipping the last element if odd number
+        for i in range(0, len(data) - 1, 2):
+            # Add both data points to the data array
+            paired_data.extend([data[i], data[i + 1]])
+            
+            # Create label pair based on first element's label
+            # If first is 1 (True), pair is [True, False]
+            # If first is 0 (False), pair is [False, True]
+            label_pair = [labels[i] == 1, labels[i] == 0]
+            paired_labels.append(label_pair)
         
         result[split] = {
-            'data': data,
-            'labels': labels
+            'data': paired_data,
+            'labels': paired_labels
         }
     
     return result
