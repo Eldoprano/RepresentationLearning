@@ -11,22 +11,10 @@ class StringSearchRepReader:
     def __init__(self, rep_reading_pipeline):
         self.pipeline = rep_reading_pipeline
         
-    def get_directions(            self, 
-            train_inputs: Union[str, List[str], List[List[str]]], 
-            rep_token: Union[str, int]=-1, 
-            hidden_layers: Union[str, int]=-1,
-            n_difference: int = 1,
-            batch_size: int = 8, 
-            train_labels: List[int] = None,
-            direction_method: str = 'pca',
-            direction_finder_kwargs: dict = {},
-            which_hidden_states: Optional[str]=None,
-            searched_tokens=None):
-        
+    def _process_string_search(self, inputs, searched_tokens):
+        """Helper method to process string search and cut inputs"""
         if searched_tokens is None:
-            return self.pipeline.get_directions(train_inputs, rep_token, hidden_layers, 
-                                                n_difference, train_labels, direction_method, 
-                                                batch_size)
+            return inputs
 
         # Tokenize search string and remove BOS token
         searched_tokens = self.pipeline.tokenizer(searched_tokens, return_tensors="pt")["input_ids"]
@@ -37,7 +25,7 @@ class StringSearchRepReader:
             print(f"Token {t} -> {self.pipeline.tokenizer.decode(t)}")
         
         # Tokenize inputs
-        train_inputs_tokens = self.pipeline.tokenizer(train_inputs, return_tensors="pt", padding=True)
+        train_inputs_tokens = self.pipeline.tokenizer(inputs, return_tensors="pt", padding=True)
         input_ids = train_inputs_tokens["input_ids"]
         
         # Cut inputs at found positions
@@ -51,14 +39,33 @@ class StringSearchRepReader:
                     break
         
         # Remove artifacts from decoded strings
-        cut_inputs = [text.replace(self.pipeline.tokenizer.pad_token, "").replace(self.pipeline.tokenizer.bos_token,"") for text in cut_inputs]
-  
-        # Call RepReadingPipeline
+        return [text.replace(self.pipeline.tokenizer.pad_token, "").replace(self.pipeline.tokenizer.bos_token,"") for text in cut_inputs]
+
+    def get_directions(self, train_inputs, rep_token=-1, hidden_layers=-1,
+                      n_difference=1, batch_size=8, train_labels=None,
+                      direction_method='pca', direction_finder_kwargs={},
+                      which_hidden_states=None, searched_tokens=None):
+        
+        processed_inputs = self._process_string_search(train_inputs, searched_tokens)
+        
         return self.pipeline.get_directions(
-            train_inputs=cut_inputs,
+            train_inputs=processed_inputs,
             rep_token=rep_token, 
             hidden_layers=hidden_layers, 
             n_difference=n_difference, 
             batch_size=batch_size,
             train_labels=train_labels, 
             direction_method=direction_method)
+
+    def rep_reading_test(self, test_inputs, rep_token=-1, hidden_layers=-1,
+                        batch_size=32, searched_tokens=None):
+        """
+        Process test data through the pipeline with optional string search
+        """
+        processed_inputs = self._process_string_search(test_inputs, searched_tokens)
+        
+        return self.pipeline(
+            processed_inputs,
+            rep_token=rep_token,
+            hidden_layers=hidden_layers,
+            batch_size=batch_size)
