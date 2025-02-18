@@ -21,8 +21,7 @@ class StringSearchRepReader:
         for label, tokens in [(True, searched_tokens_true), (False, searched_tokens_false)]:
             if tokens is not None:
                 if tokens == "":
-                    # For empty string, mark to cut
-                    searched_tokens_dict[label] = self.pipeline.tokenizer.encode("<CUT!>")
+                    searched_tokens_dict[label] = "<CUT!>"
                 else:
                     tokenized = self.pipeline.tokenizer(tokens, return_tensors="pt")["input_ids"]
                     searched_tokens_dict[label] = tokenized[:, 1:]  # Remove BOS token
@@ -51,18 +50,21 @@ class StringSearchRepReader:
                 continue
                 
             if searched_tokens == "<CUT!>":
-                # Cut at 30% of sequence length for empty search string
                 cut_pos = max(1, int(len(tokens) * 0.3))  # Ensure at least 1 token
                 cut_tokens = tokens[:cut_pos]
                 cut_text = self.pipeline.tokenizer.decode(cut_tokens)
                 cut_inputs.append(cut_text)
                 continue
     
-            # Normal string search logic
+            # Modified string search logic for multiple tokens
             found = False
-            for i in range(len(tokens) - len(searched_tokens[0]) + 1):
-                if torch.all(tokens[i:i+len(searched_tokens[0])] == searched_tokens[0]):
-                    cut_tokens = tokens[:i+len(searched_tokens[0])]
+            sequence_length = len(searched_tokens[0])
+            for i in range(len(tokens) - sequence_length + 1):
+                # Check if the entire sequence matches
+                if torch.all(tokens[i:i+sequence_length] == searched_tokens[0]):
+                    # Cut at the end of the matched sequence
+                    cut_pos = i + sequence_length
+                    cut_tokens = tokens[:cut_pos]
                     cut_text = self.pipeline.tokenizer.decode(cut_tokens)
                     cut_inputs.append(cut_text)
                     found = True
