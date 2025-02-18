@@ -10,6 +10,19 @@ class StringSearchRepReader:
     """
     def __init__(self, rep_reading_pipeline):
         self.pipeline = rep_reading_pipeline
+
+    def _get_string_variants(self, base_string):
+        """Helper function to generate variants of a search string"""
+        if base_string == "":
+            return [""]
+        variants = [
+            base_string,
+            "\n" + base_string,
+            "\n\n" + base_string,
+            " \n\n" + base_string,
+            " " + base_string
+        ]
+        return variants
         
     def _process_string_search(self, inputs, searched_tokens_true=None, searched_tokens_false=None, labels=None):
         """Helper method to process string search and cut inputs based on labels"""
@@ -18,16 +31,19 @@ class StringSearchRepReader:
     
         # Process both search strings
         searched_tokens_dict = {}
-        for label, tokens in [(True, searched_tokens_true), (False, searched_tokens_false)]:
-            if tokens is not None:
-                if tokens == "":
+        for label, search_string in [(True, searched_tokens_true), (False, searched_tokens_false)]:
+            if search_string is not None:
+                if search_string == "":
                     searched_tokens_dict[label] = "<CUT!>"
                 else:
-                    tokenized = self.pipeline.tokenizer(tokens, return_tensors="pt")["input_ids"]
-                    searched_tokens_dict[label] = tokenized[:, 1:]  # Remove BOS token
-                    print(f"Searched tokens for label {label}:")
-                    for t in searched_tokens_dict[label][0]:
-                        print(f"Token {t} -> {self.pipeline.tokenizer.decode(t)}")
+                    variants = self._get_string_variants(search_string)
+                    searched_tokens_dict[label] = []
+                    for variant in variants:
+                        tokenized = self.pipeline.tokenizer(variant, return_tensors="pt")["input_ids"]
+                        searched_tokens_dict[label].append(tokenized[:, 1:])  # Remove BOS token
+                        print(f"Searched tokens for label {label}, variant '{variant}':")
+                        for t in tokenized[0, 1:]:
+                            print(f"Token {t} -> {self.pipeline.tokenizer.decode(t)}")
     
         # Tokenize inputs
         train_inputs_tokens = self.pipeline.tokenizer(inputs, return_tensors="pt", padding=True)
@@ -40,16 +56,16 @@ class StringSearchRepReader:
             label_idx = idx // 2  # Integer division to get pair index
             label_pos = idx % 2   # Remainder to get position within pair
             if labels is None or len(labels) <= label_idx:
-                searched_tokens = searched_tokens_dict.get(True, None)  # Default to True if no labels
+                searched_tokens_list = searched_tokens_dict.get(True, None)  # Default to True if no labels
             else:
                 label = labels[label_idx][label_pos]
-                searched_tokens = searched_tokens_dict.get(label, None)
+                searched_tokens_list = searched_tokens_dict.get(label, None)
             
-            if searched_tokens is None:
+            if searched_tokens_list is None:
                 cut_inputs.append(self.pipeline.tokenizer.decode(tokens))
                 continue
                 
-            if searched_tokens == "<CUT!>":
+            if searched_tokens_list == "<CUT!>":
                 # Find first non-padding token
                 non_pad_tokens = tokens[tokens != self.pipeline.tokenizer.pad_token_id]
                 if len(non_pad_tokens) == 0:
@@ -68,35 +84,27 @@ class StringSearchRepReader:
                 cut_inputs.append(cut_text)
                 continue
     
-            # Modified string search logic for multiple tokens
+            # Search for any of the variants
             found = False
-            search_sequence = searched_tokens[0]  # Shape: [3] in your example
-            sequence_length = len(search_sequence)
+            earliest_cut_pos = None
             
-            # Debug prints to verify the search
-            print(f"Looking for sequence: {search_sequence}")
-            print(f"In tokens: {tokens}")
-            
-            # Debug prints
-            print(f"Search sequence shape: {search_sequence.shape}")
-            print(f"Tokens shape: {tokens.shape}")
-            print(f"First window: {tokens[:sequence_length]}")
-            print(f"Comparison result: {(tokens[:sequence_length] == search_sequence).all()}")
-
-            for i in range(len(tokens) - sequence_length + 1):
-                window = tokens[i:i+sequence_length]
-                # Compare each element in the window
-                matches = (window == search_sequence).all()
-                if matches:
-                    # Cut at the end of the matched sequence
-                    cut_pos = i + sequence_length
-                    cut_tokens = tokens[:cut_pos]
-                    cut_text = self.pipeline.tokenizer.decode(cut_tokens)
-                    cut_inputs.append(cut_text)
-                    found = True
-                    break
+            for searched_tokens in searched_tokens_list:
+                search_sequence = searched_tokens[0]
+                sequence_length = len(search_sequence)
                 
-            if not found:
+                for i in range(len(tokens) - sequence_length + 1):
+                    window = tokens[i:i+sequence_length]
+                    if (window == search_sequence).all():
+                        cut_pos = i + sequence_length
+                        if earliest_cut_pos is None or cut_pos < earliest_cut_pos:
+                            earliest_cut_pos = cut_pos
+                        found = True
+                        
+            if found and earliest_cut_pos is not None:
+                cut_tokens = tokens[:earliest_cut_pos]
+                cut_text = self.pipeline.tokenizer.decode(cut_tokens)
+                cut_inputs.append(cut_text)
+            else:
                 cut_inputs.append(self.pipeline.tokenizer.decode(tokens))
     
         # Remove artifacts from decoded strings
