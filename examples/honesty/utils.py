@@ -64,13 +64,13 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
                 # Ugly hack, because continue_final_message=True has some bugs
                 # Apply the template and remove "<｜end▁of▁sentence｜>" from the result
                 honest_template = tokenizer.apply_chat_template(honest_conv, tokenize=False, add_generation_prompt=False, continue_final_message=True)
-                honest_template = honest_template.replace("<｜end▁of▁sentence｜>", "")
+                honest_template = honest_template.replace("<｜end▁of▁sentence｜>", "").replace("<｜begin▁of▁sentence｜>","")
                 if reasoning_template:
                     honest_template += truncated_statement.format(type='an honest')
                 honest_statements.append(honest_template)
 
                 untruthful_template = tokenizer.apply_chat_template(untruthful_conv, tokenize=False, add_generation_prompt=False, continue_final_message=True)
-                untruthful_template = untruthful_template.replace("<｜end▁of▁sentence｜>", "")
+                untruthful_template = untruthful_template.replace("<｜end▁of▁sentence｜>", "").replace("<｜begin▁of▁sentence｜>","")
                 if reasoning_template:
                     untruthful_template += truncated_statement.format(type='an untruthful')
                 untruthful_statements.append(untruthful_template)
