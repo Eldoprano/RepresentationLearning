@@ -57,7 +57,7 @@ class StringSearchRepReader:
             train_labels=train_labels, 
             direction_method=direction_method)
 
-    def rep_reading_test(self, test_inputs, rep_token=-1, hidden_layers=-1,
+    def rep_reading_test(self, test_inputs, rep_token=-1, hidden_layers=-1, rep_reader=None,
                         batch_size=32, searched_tokens=None):
         """
         Process test data through the pipeline with optional string search
@@ -68,4 +68,5 @@ class StringSearchRepReader:
             processed_inputs,
             rep_token=rep_token,
             hidden_layers=hidden_layers,
+            rep_reader=rep_reader,
             batch_size=batch_size)
