@@ -70,10 +70,24 @@ class StringSearchRepReader:
     
             # Modified string search logic for multiple tokens
             found = False
-            sequence_length = len(searched_tokens[0])
+            search_sequence = searched_tokens[0]  # Shape: [3] in your example
+            sequence_length = len(search_sequence)
+            
+            # Debug prints to verify the search
+            print(f"Looking for sequence: {search_sequence}")
+            print(f"In tokens: {tokens}")
+            
+            # Debug prints
+            print(f"Search sequence shape: {search_sequence.shape}")
+            print(f"Tokens shape: {tokens.shape}")
+            print(f"First window: {tokens[:sequence_length]}")
+            print(f"Comparison result: {(tokens[:sequence_length] == search_sequence).all()}")
+
             for i in range(len(tokens) - sequence_length + 1):
-                # Check if the entire sequence matches
-                if torch.all(tokens[i:i+sequence_length] == searched_tokens[0]):
+                window = tokens[i:i+sequence_length]
+                # Compare each element in the window
+                matches = (window == search_sequence).all()
+                if matches:
                     # Cut at the end of the matched sequence
                     cut_pos = i + sequence_length
                     cut_tokens = tokens[:cut_pos]
@@ -81,6 +95,7 @@ class StringSearchRepReader:
                     cut_inputs.append(cut_text)
                     found = True
                     break
+                
             if not found:
                 cut_inputs.append(self.pipeline.tokenizer.decode(tokens))
     
@@ -98,7 +113,7 @@ class StringSearchRepReader:
             searched_tokens_true, 
             searched_tokens_false, 
             train_labels
-        )
+        )     
         
         return self.pipeline.get_directions(
             train_inputs=processed_inputs,
