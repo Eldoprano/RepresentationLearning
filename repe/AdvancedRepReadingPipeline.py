@@ -22,7 +22,7 @@ class StringSearchRepReader:
             if tokens is not None:
                 if tokens == "":
                     # For empty string, mark to cut
-                    searched_tokens_dict[label] = "<CUT!>"
+                    searched_tokens_dict[label] = self.pipeline.tokenizer.encode("<CUT!>")
                 else:
                     tokenized = self.pipeline.tokenizer(tokens, return_tensors="pt")["input_ids"]
                     searched_tokens_dict[label] = tokenized[:, 1:]  # Remove BOS token
