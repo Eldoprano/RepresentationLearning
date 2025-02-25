@@ -237,75 +237,73 @@ class RandomRepReader(RepReader):
 
 class SupervisedRepReader(RepReader):
     """A reader that uses supervised learning to find directions."""
+    needs_hiddens = True
     
-    def __init__(self, rep_reading_pipeline):
-        super().__init__(rep_reading_pipeline)
-        self.direction_method = "supervised"
+    def __init__(self, method="logistic", n_components=1):
+        super().__init__()
+        self.direction_method = method
         self.classifier = None
-    
-    def get_rep_directions(self, texts, rep_token=-1, hidden_layers=[-1], n_difference=1,
-                      train_labels=None, direction_method="logistic", batch_size=8, **kwargs):
+        self.n_components = n_components
+        self.H_train_means = {}
+
+    def get_rep_directions(self, model, tokenizer, hidden_states, hidden_layers, **kwargs):
         """Find directions using supervised learning methods."""
         
-        assert train_labels is not None, "Train labels must be provided for supervised learning"
+        train_choices = kwargs.get('train_choices')
+        assert train_choices is not None, "SupervisedRepReader requires train_choices to learn the direction"
         
-        # Extract hidden states (similar to original code)
-        hidden_states = self.rep_reading_pipeline.extract_hidden_states(
-            texts, rep_token=rep_token, hidden_layers=hidden_layers, batch_size=batch_size
-        )
-        
-        # Collect training data
-        self.directions = {}
-        self.direction_signs = {}
-        self.H_train_means = {}
+        directions = {}
         
         for layer in hidden_layers:
-            X_train = []
+            # Get training data for this layer
+            X_train = hidden_states[layer]
+            
+            # Get labels from train_choices 
+            # For relative hidden states (n_difference=1), train_choices already gives us what we need
+            # For raw hidden states, we need to flatten the labels
             y_train = []
-            
-            for i, h in enumerate(hidden_states):
-                X_train.append(h[layer].cpu().numpy())
-                # For compatibility with the existing system, extract labels correctly
-                label_idx = i // 2  # Since we have pairs of examples
-                label = 0 if i % 2 == 0 else 1  # Even indices are False, odd are True
-                if train_labels[label_idx][label]:  # If this label (False/True) is marked as 1
-                    y_train.append(1)
+            for choice in train_choices:
+                if isinstance(choice, list) and len(choice) == 2:
+                    # Convert [False, True] to 1 (True is at position 1)
+                    # Convert [True, False] to 0 (True is at position 0)
+                    y_train.append(1 if choice[1] else 0)
                 else:
-                    y_train.append(0)
-            
-            X_train = np.vstack(X_train)
-            y_train = np.array(y_train)
+                    # It's already a simple 0/1 value
+                    y_train.append(choice)
             
             # Center the data
             mean_vec = np.mean(X_train, axis=0, keepdims=True)
+            self.H_train_means[layer] = mean_vec
             X_train_centered = X_train - mean_vec
-            self.H_train_means[layer] = torch.tensor(mean_vec)
             
             # Train the classifier based on the selected method
-            if direction_method == "logistic":
+            if self.direction_method == "logistic":
                 from sklearn.linear_model import LogisticRegression
                 classifier = LogisticRegression(C=1.0, class_weight='balanced')
                 classifier.fit(X_train_centered, y_train)
                 direction = classifier.coef_[0]
-            elif direction_method == "svm":
+            elif self.direction_method == "svm":
                 from sklearn.svm import LinearSVC
                 classifier = LinearSVC(C=1.0, class_weight='balanced')
                 classifier.fit(X_train_centered, y_train)
                 direction = classifier.coef_[0]
             else:
-                # Fall back to PCA-like approach for compatibility
-                direction = pca_direction(X_train_centered, y_train, n_difference)
+                # Fall back to a simple supervised method - use mean difference
+                pos_mean = np.mean(X_train_centered[np.array(y_train) == 1], axis=0)
+                neg_mean = np.mean(X_train_centered[np.array(y_train) == 0], axis=0)
+                direction = pos_mean - neg_mean
+                
+            # Store the direction
+            directions[layer] = np.expand_dims(direction, 0)  # Add dimension to match expected shape (n_components, hidden_size)
             
-            # Store the direction and its sign
-            self.directions[layer] = torch.tensor(direction).float()
-            self.direction_signs[layer] = 1  # Positive = higher activation means more likely class 1
-            
-        return self
+        return directions
 
+# Update the DIRECTION_FINDERS dictionary
 DIRECTION_FINDERS = {
     'pca': PCARepReader,
     'cluster_mean': ClusterMeanRepReader,
     'random': RandomRepReader,
     'logistic': SupervisedRepReader,
     'svm': SupervisedRepReader,
+    'supervised': SupervisedRepReader,  # Add this as an alias
 }
