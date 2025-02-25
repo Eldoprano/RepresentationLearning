@@ -361,3 +361,87 @@ def plot_lat_scans(input_ids, rep_reader_scores_dict, layer_slice, start_answer_
         ax.set_yticklabels(np.arange(20, len(standardized_scores[0])+20, 5)[::-1][1:])#, fontsize=20)
         ax.set_title("LAT Neural Activity")#, fontsize=30)
     plt.show()
+
+def analyze_wait_progression(model, tokenizer, text, rep_reader, hidden_layers, window_size=5):
+    """Analyze the progression of representation values leading to a 'Wait' moment."""
+    
+    # Tokenize the input text
+    tokens = tokenizer.tokenize(text)
+    input_ids = tokenizer.convert_tokens_to_ids(tokens)
+    
+    # Identify positions of "Wait" tokens
+    wait_positions = []
+    for i in range(len(tokens)):
+        if "wait" in tokens[i].lower() or "Wait" in tokens[i]:
+            wait_positions.append(i)
+    
+    if not wait_positions:
+        print("No 'Wait' token found in the text.")
+        return None
+    
+    print(f"Found 'Wait' at positions: {wait_positions}")
+    
+    # For each Wait position, analyze the build-up
+    results = []
+    for wait_pos in wait_positions:
+        # Define the window of tokens before the Wait
+        start_pos = max(0, wait_pos - window_size)
+        
+        # Generate progressively longer prefixes
+        prefixes = []
+        for end_pos in range(start_pos, wait_pos + 1):
+            prefix_tokens = input_ids[:end_pos+1]
+            prefix_text = tokenizer.decode(prefix_tokens)
+            prefixes.append(prefix_text)
+        
+        # Get activations for each prefix
+        activations = []
+        for prefix in prefixes:
+            # Extract hidden states for the last token of each prefix
+            hidden_states = rep_reading_pipeline.extract_hidden_states([prefix], rep_token=-1, hidden_layers=hidden_layers)
+            # Apply the representation reader
+            hidden_activations = rep_reader.transform(hidden_states[0], hidden_layers)
+            activations.append(hidden_activations)
+        
+        # Record results
+        window_results = {
+            "tokens": tokens[start_pos:wait_pos+1],
+            "wait_position": wait_pos,
+            "window_start": start_pos,
+            "activations": activations
+        }
+        results.append(window_results)
+    
+    return results
+
+def plot_wait_progression(results, layer=-29):
+    """Plot the progression of representation values leading to a Wait moment."""
+    import matplotlib.pyplot as plt
+    
+    plt.figure(figsize=(12, 6))
+    
+    for i, result in enumerate(results):
+        tokens = result["tokens"]
+        activations = [a[layer] for a in result["activations"]]
+        
+        x = range(len(tokens))
+        plt.plot(x, activations, marker='o', linewidth=2, label=f"Wait instance {i+1}")
+        
+        # Highlight the Wait token
+        wait_rel_pos = result["wait_position"] - result["window_start"]
+        plt.axvline(x=wait_rel_pos, color='r', linestyle='--', alpha=0.5)
+        
+        # Annotate tokens
+        for j, token in enumerate(tokens):
+            plt.annotate(token, (j, activations[j]), 
+                        textcoords="offset points", xytext=(0,10), 
+                        ha='center', fontsize=8)
+    
+    plt.title(f"Progression of 'Wait' Representation (Layer {layer})")
+    plt.xlabel("Tokens before Wait")
+    plt.ylabel("Activation Value")
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    
+    return plt
