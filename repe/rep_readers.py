@@ -243,7 +243,7 @@ class SupervisedRepReader(RepReader):
         self.direction_method = "supervised"
         self.classifier = None
     
-    def get_directions(self, texts, rep_token=-1, hidden_layers=[-1], n_difference=1,
+    def get_rep_directions(self, texts, rep_token=-1, hidden_layers=[-1], n_difference=1,
                       train_labels=None, direction_method="logistic", batch_size=8, **kwargs):
         """Find directions using supervised learning methods."""
         
