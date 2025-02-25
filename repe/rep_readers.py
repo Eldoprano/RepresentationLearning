@@ -306,5 +306,6 @@ DIRECTION_FINDERS = {
     'pca': PCARepReader,
     'cluster_mean': ClusterMeanRepReader,
     'random': RandomRepReader,
-    'supervised': SupervisedRepReader,
+    'logistic': SupervisedRepReader,
+    'svm': SupervisedRepReader,
 }
