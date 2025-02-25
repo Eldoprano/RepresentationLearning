@@ -258,18 +258,23 @@ class SupervisedRepReader(RepReader):
             # Get training data for this layer
             X_train = hidden_states[layer]
             
-            # Get labels from train_choices 
-            # For relative hidden states (n_difference=1), train_choices already gives us what we need
-            # For raw hidden states, we need to flatten the labels
+            # Get labels from train_choices and expand them to match paired data structure
             y_train = []
             for choice in train_choices:
                 if isinstance(choice, list) and len(choice) == 2:
-                    # Convert [False, True] to 1 (True is at position 1)
-                    # Convert [True, False] to 0 (True is at position 0)
-                    y_train.append(1 if choice[1] else 0)
+                    # Each label pair [False, True] corresponds to two entries in X_train
+                    # For [False, True], we add [0, 1] to y_train
+                    # For [True, False], we add [1, 0] to y_train
+                    y_train.extend([0, 1] if choice[1] else [1, 0])
                 else:
-                    # It's already a simple 0/1 value
-                    y_train.append(choice)
+                    # For single value labels, duplicate them since each corresponds to two entries
+                    y_train.extend([choice, choice])
+            
+            # Verify we have the correct number of labels
+            assert len(y_train) == X_train.shape[0], (
+                f"Mismatch between number of labels ({len(y_train)}) and "
+                f"training examples ({X_train.shape[0]})"
+            )
             
             # Center the data
             mean_vec = np.mean(X_train, axis=0, keepdims=True)
