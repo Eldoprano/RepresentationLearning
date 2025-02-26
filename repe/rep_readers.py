@@ -81,7 +81,6 @@ class RepReader(ABC):
         signs = {}
 
         if self.needs_hiddens and hidden_states is not None and len(hidden_states) > 0:
-            train_choices = [label for sublist in train_choices for label in sublist]
             for layer in hidden_layers:    
                 assert hidden_states[layer].shape[0] == 2 * len(train_choices), f"Shape mismatch between hidden states ({hidden_states[layer].shape[0]}) and labels ({len(train_choices)})"
                 
@@ -198,6 +197,8 @@ class ClusterMeanRepReader(RepReader):
 
         # train labels is necessary to differentiate between different classes
         train_choices = kwargs['train_choices'] if 'train_choices' in kwargs else None
+        train_choices = [label for sublist in train_choices for label in sublist]
+        
         assert train_choices is not None, "ClusterMeanRepReader requires train_choices to differentiate two clusters"
         for layer in hidden_layers:
             assert len(train_choices) == len(hidden_states[layer]), f"Shape mismatch between hidden states ({len(hidden_states[layer])}) and labels ({len(train_choices)})"
