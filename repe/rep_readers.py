@@ -81,6 +81,7 @@ class RepReader(ABC):
         signs = {}
 
         if self.needs_hiddens and hidden_states is not None and len(hidden_states) > 0:
+            train_choices = [label for sublist in train_choices for label in sublist]
             for layer in hidden_layers:    
                 assert hidden_states[layer].shape[0] == 2 * len(train_choices), f"Shape mismatch between hidden states ({hidden_states[layer].shape[0]}) and labels ({len(train_choices)})"
                 
