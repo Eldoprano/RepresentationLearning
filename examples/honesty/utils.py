@@ -158,7 +158,7 @@ def convert_dataset_format(dataset) -> dict:
     
     return result
 
-def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_answer_token="<｜Assistant｜>"):
+def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_answer_token="<｜Assistant｜>", threshold_start=None):
     # Parameters that affect layout
     x_start = 1
     y_start = 9.5
@@ -260,7 +260,26 @@ def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_a
         rep_scores[np.abs(rep_scores) < 0.0] = 0
         
         if s_style == "neg":
-            rep_scores = np.clip(rep_scores, -np.inf, 0)
+            # Modified code to handle threshold_start
+            if threshold_start is not None:
+                # Create a gradient between threshold_start and THRESHOLD
+                mask_below_start = rep_scores < threshold_start
+                mask_between = (rep_scores >= threshold_start) & (rep_scores <= 0)
+                
+                # Scale values between threshold_start and THRESHOLD to -inf to 0
+                if np.any(mask_between):
+                    # Get values between thresholds and normalize to 0-1 range
+                    between_values = rep_scores[mask_between]
+                    normalized = (between_values - threshold_start) / (-threshold_start)
+                    # Scale to -mag to 0 range
+                    rep_scores[mask_between] = -mag * (1 - normalized)
+                
+                # Set values below threshold_start to -mag
+                rep_scores[mask_below_start] = -mag
+            else:
+                # Original behavior
+                rep_scores = np.clip(rep_scores, -np.inf, 0)
+                
             rep_scores[rep_scores == 0] = mag
         elif s_style == "pos":
             rep_scores = np.clip(rep_scores, 0, np.inf)
