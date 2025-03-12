@@ -7,15 +7,21 @@ import torch
 
 def project_onto_direction(H, direction):
     """Project matrix H (n, d_1) onto direction vector (d_2,)"""
+    # Ensure H and direction are on the same device and dtype
+    if not isinstance(H, torch.Tensor):
+        H = torch.tensor(H, device='cuda')
+    
+    if not isinstance(direction, torch.Tensor):
+        # Create tensor with same dtype as H
+        direction = torch.tensor(direction, device=H.device, dtype=H.dtype)
+    else:
+        # Convert existing tensor to match H's dtype
+        direction = direction.to(device=H.device, dtype=H.dtype)
+    
     # Calculate the magnitude of the direction vector
-     # Ensure H and direction are on the same device (CPU or GPU)
-    if type(direction) != torch.Tensor:
-        H = torch.Tensor(H).cuda()
-    if type(direction) != torch.Tensor:
-        direction = torch.Tensor(direction)
-        direction = direction.to(H.device)
     mag = torch.norm(direction)
     assert not torch.isinf(mag).any()
+    
     # Calculate the projection
     projection = H.matmul(direction) / mag
     return projection
